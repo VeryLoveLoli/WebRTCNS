@@ -1,0 +1,25 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "AudioInfo",
+        "repositoryURL": "https://gitee.com/cchsora/AudioInfo",
+        "state": {
+          "branch": "master",
+          "revision": "b8a976c040becc458431a50aac004512bdc08499",
+          "version": null
+        }
+      },
+      {
+        "package": "Print",
+        "repositoryURL": "https://gitee.com/cchsora/Print",
+        "state": {
+          "branch": "master",
+          "revision": "61726bb7ce88291df3d567217ee0a43e4e433d22",
+          "version": null
+        }
+      }
+    ]
+  },
+  "version": 1
+}
