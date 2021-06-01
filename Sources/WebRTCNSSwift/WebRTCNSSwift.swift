@@ -9,7 +9,7 @@ import Foundation
 import AudioToolbox
 import WebRTCNS
 import Print
-import AudioInfo
+import AudioFileInfo
 
 /**
  WebRTC降噪

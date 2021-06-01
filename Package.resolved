@@ -2,11 +2,11 @@
   "object": {
     "pins": [
       {
-        "package": "AudioInfo",
-        "repositoryURL": "https://gitee.com/cchsora/AudioInfo",
+        "package": "AudioFileInfo",
+        "repositoryURL": "https://gitee.com/cchsora/AudioFileInfo",
         "state": {
           "branch": "master",
-          "revision": "b8a976c040becc458431a50aac004512bdc08499",
+          "revision": "a178beea28f0b1ac1c4bf950a27eeab2fa1037a2",
           "version": null
         }
       },
