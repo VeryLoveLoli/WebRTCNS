@@ -153,87 +153,63 @@ open class WebRTCNSSwift {
         guard let writeInfo = AudioFileWriteInfo(outPath, basicDescription: basic) else { Print.debug("AudioFileWriteInfo error"); complete(false); return }
         
         /// 定点降噪
-        let nsx = WebRtcNsx_Create()
-        
-        /**
-         关闭资源
-         */
-        func close() {
-            
-            WebRtcNsx_Free(nsx);
-            ExtAudioFileDispose(readInfo.id)
-            ExtAudioFileDispose(writeInfo.id)
-        }
-        
-        /// 初始化降噪
-        status = WebRtcNsx_Init(nsx, UInt32(basic.mSampleRate))
-        guard status == noErr else { Print.error("WebRtcNsx_Init error"); close(); complete(false); return }
-        
-        /// 配置降噪
-        status = WebRtcNsx_set_policy(nsx, level.rawValue)
-        guard status == noErr else { Print.error("WebRtcNsx_set_policy error"); close(); complete(false); return }
+        guard let webRTCNSSwift = WebRTCNSSwift(UInt32(basic.mSampleRate), bitsPer: UInt32(basic.mBitsPerChannel), channels: Int32(basic.mChannelsPerFrame), level: level) else { return }
         
         /// 读取位置
         var outFramesOffset: Int64 = 0
         
         /// 必须10ms
         let inNumberFrames = UInt32(basic.mSampleRate/100)
+        var ioNumberFrames = inNumberFrames
         
         /// 开始进度
         progress(0)
         
-        while outFramesOffset < readInfo.frames {
+        func close() {
             
-            var ioNumberFrames = inNumberFrames
+            webRTCNSSwift.close()
+            ExtAudioFileDispose(readInfo.id)
+            ExtAudioFileDispose(writeInfo.id)
+        }
+        
+        while outFramesOffset < readInfo.frames {
             
             /// 初始化`Buffer`
             var ioData = AudioBufferList()
             ioData.mNumberBuffers = 1
             ioData.mBuffers.mDataByteSize = ioNumberFrames * basic.mBytesPerFrame
-            ioData.mBuffers.mData = calloc(Int(ioData.mBuffers.mDataByteSize), 1)
+            
+            /// 长度
+            let count = Int(ioData.mBuffers.mDataByteSize)
+            
+            /// 设置音频输入
+            var inBytes = [UInt8](repeating: 0, count: count)
+            inBytes.withUnsafeMutableBytes { (mData: UnsafeMutableRawBufferPointer) -> Void in
+                
+                ioData.mBuffers.mData = mData.baseAddress
+            }
             
             /// 读取数据
             var status = ExtAudioFileRead(readInfo.id, &ioNumberFrames, &ioData)
             guard status == noErr else { Print.error("ExtAudioFileRead \(status)"); close(); complete(false); return }
             guard ioNumberFrames == inNumberFrames else { Print.error("ioNumberFrames \(ioNumberFrames) !=  \(inNumberFrames)"); close(); complete(Int64(ioNumberFrames) + outFramesOffset == readInfo.frames); return }
             
-            /// 转换`Int16`长度
-            let count = Int(ioData.mBuffers.mDataByteSize)/MemoryLayout.stride(ofValue: Int16())
+            /// 设置音频输出
+            var outBytes = webRTCNSSwift.handle(inBytes)
             
-            /// 设置`Int16`音频输入
-            var inData = [Int16](repeating: 0, count: count)
-            memcpy(&inData, ioData.mBuffers.mData, Int(ioData.mBuffers.mDataByteSize))
-            /// 设置`Int16`音频输出
-            var outData = inData
+            var outData = AudioBufferList()
+            outData.mNumberBuffers = 1
+            outData.mBuffers.mDataByteSize = UInt32(count)
             
-            /**
-             降噪（参数转换成指针）
-             */
-            func process(_ inBytes: UnsafePointer<Int16>?, outBytes: UnsafeMutablePointer<Int16>?) {
+            outBytes.withUnsafeMutableBytes { (mData: UnsafeMutableRawBufferPointer) ->Void in
                 
-                var inFrames = inBytes
-                var outFrames = outBytes
-                
-                /// 定点降噪
-                WebRtcNsx_Process(nsx, &inFrames, Int32(basic.mChannelsPerFrame), &outFrames)
+                outData.mBuffers.mData = mData.baseAddress
             }
             
-            /// 降噪
-            process(&inData, outBytes: &outData)
-            
-            /// 释放输入音频数据
-            free(ioData.mBuffers.mData)
-            
-            /// 创建输出音频数据
-            ioData.mBuffers.mData = calloc(Int(ioData.mBuffers.mDataByteSize), 1)
-            ioData.mBuffers.mData?.copyMemory(from: &outData, byteCount: Int(ioData.mBuffers.mDataByteSize))
-            
             /// 写入音频文件
-            status = ExtAudioFileWrite(writeInfo.id, ioNumberFrames, &ioData)
-            guard status == noErr else { Print.error("ExtAudioFileWrite \(status)"); close(); complete(false); return }
+            status = ExtAudioFileWrite(writeInfo.id, ioNumberFrames, &outData)
             
-            /// 释放输出音频数据
-            free(ioData.mBuffers.mData)
+            guard status == noErr else { Print.error("ExtAudioFileWrite \(status)"); close(); complete(false); return }
             
             /// 移动到下个帧片段
             status = ExtAudioFileTell(readInfo.id, &outFramesOffset)
@@ -347,32 +323,23 @@ open class WebRTCNSSwift {
      */
     open func handle(_ bytes: [UInt8]) -> [UInt8] {
         
-        var outBytes = bytes
-        
-        let inData = Data(bytes: bytes, count: bytes.count)
+        var outBytes = [UInt8](repeating: 0, count: bytes.count)
+        memcpy(&outBytes, bytes, bytes.count)
         
         /// 转换输入指针
-        inData.withUnsafeBytes { (inBody: UnsafeRawBufferPointer) -> Void in
+        bytes.withUnsafeBytes { (inBody: UnsafeRawBufferPointer) -> Void in
             
             let inBind = inBody.bindMemory(to: Int16.self)
             var inBuffer = inBind.baseAddress
             
-            var outData = Data(bytes: outBytes, count: outBytes.count)
-            
             /// 转换输出指针
-            outData.withUnsafeMutableBytes { (outBody: UnsafeMutableRawBufferPointer) -> Void in
+            outBytes.withUnsafeMutableBytes { (outBody: UnsafeMutableRawBufferPointer) -> Void in
                 
                 let outBind = outBody.bindMemory(to: Int16.self)
                 var outBuffer = UnsafeMutablePointer<Int16>.init(outBind.baseAddress)
                 
                 /// 降噪
                 WebRtcNsx_Process(nsx, &inBuffer, channels, &outBuffer)
-                
-                if let buffer = outBuffer {
-                    
-                    /// 更新数据
-                    outBytes = [UInt8](Data(bytes: buffer, count: bytes.count))
-                }
             }
         }
         
